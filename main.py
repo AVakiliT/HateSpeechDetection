@@ -12,30 +12,24 @@ import matplotlib.pyplot as plt
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# DATASET = 'agnews'
-# MAX_LEN = 60
-# N_EPOCHS = 18
-# NUM_CLASSES = 4
-# BATCH_SIZE=32
-
 # DATASET = 'Dataset/OffenseEval'
 # MAX_LEN = 60
 # N_EPOCHS = 5
-# NUM_CLASSES = 2
-# BATCH_SIZE=16
+# NUM_CLASSES = 4
+# BATCH_SIZE=32
+#
+# DATASET = 'Dataset/Emotion'
+# MAX_LEN = 60
+# N_EPOCHS = 5
+# NUM_CLASSES = 4
+# BATCH_SIZE=32
 
-
-DATASET = 'Dataset/Emotion'
+DATASET = 'Dataset/Sarcasm'
 MAX_LEN = 60
 N_EPOCHS = 5
 NUM_CLASSES = 4
 BATCH_SIZE=32
 
-#
-# DATASET = 'yelp_full'
-# MAX_LEN = 200
-# N_EPOCHS = 4
-# NUM_CLASSES = 5
 
 #%%
 
