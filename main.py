@@ -2,7 +2,7 @@ import torch
 from torch.optim import AdamW
 from torch.utils.data import TensorDataset, DataLoader, RandomSampler, SequentialSampler
 from sklearn.model_selection import train_test_split
-from transformers import BertTokenizer, BertForSequenceClassification, BertModel, DistilBertForSequenceClassification, AlbertTokenizer, AlbertForSequenceClassification
+from transformers import BertTokenizer, BertModel, DistilBertForSequenceClassification, AlbertTokenizer, AlbertForSequenceClassification
 import tqdm
 from tqdm import tqdm
 import pandas as pd
@@ -18,11 +18,19 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # NUM_CLASSES = 4
 # BATCH_SIZE=32
 
-DATASET = 'Dataset/OffenseEval'
+# DATASET = 'Dataset/OffenseEval'
+# MAX_LEN = 60
+# N_EPOCHS = 5
+# NUM_CLASSES = 2
+# BATCH_SIZE=16
+
+
+DATASET = 'Dataset/Emotion'
 MAX_LEN = 60
 N_EPOCHS = 5
-NUM_CLASSES = 2
-BATCH_SIZE=16
+NUM_CLASSES = 4
+BATCH_SIZE=32
+
 #
 # DATASET = 'yelp_full'
 # MAX_LEN = 200
@@ -56,7 +64,7 @@ df = pd.read_csv(DATASET + '/test.csv')
 
 df.text = df.text.apply(lambda x: "[CLS] " + x + ' [SEP]')
 
-tokenizer = AlbertTokenizer.from_pretrained('albert-base-v1', do_lower_case=True)
+tokenizer = AlbertTokenizer.from_pretrained('albert-base-v2', do_lower_case=True)
 
 tokenized_texts = df.text.apply(lambda x: tokenizer.tokenize(' '.join(x.split()[:MAX_LEN])))
 
@@ -73,7 +81,7 @@ test_data_loader = DataLoader(test_dataset, batch_size=BATCH_SIZE)
 #%%
 
 model = AlbertForSequenceClassification.from_pretrained(
-    "albert-base-v1", num_labels=NUM_CLASSES)
+    "albert-base-v2", num_labels=NUM_CLASSES)
 model = model.cuda()
 
 #%%
@@ -103,9 +111,9 @@ for ep in range(N_EPOCHS):
     model.train()
 
     # Tracking variables
-    tr_loss = 0
-    acc = 0
-    nb_tr_examples, nb_tr_steps = 0, 0
+    train_loss = 0
+    train_acc = 0
+    train_total, train_steps = 0, 0
 
     # Train the data for one epoch
     p_bar =tqdm(train_data_loader)
@@ -119,7 +127,7 @@ for ep in range(N_EPOCHS):
         # Forward pass
         loss, logits = model(b_input_ids, attention_mask=b_input_mask, labels=b_labels)
 
-        acc += logits.argmax(1).eq(b_labels).long().sum().item()
+        train_acc += logits.argmax(1).eq(b_labels).long().sum().item()
         train_loss_set.append(loss.item())
         # Backward pass
         loss.backward()
@@ -127,14 +135,14 @@ for ep in range(N_EPOCHS):
         optimizer.step()
 
         # Update tracking variables
-        tr_loss += loss.item()
-        nb_tr_examples += b_input_ids.size(0)
-        nb_tr_steps += 1
+        train_loss += loss.item()
+        train_total += b_input_ids.size(0)
+        train_steps += 1
 
 
-        p_bar.set_description('Loss {:.4f} Acc {:.4f}'.format(tr_loss / nb_tr_steps, acc / nb_tr_examples))
+        p_bar.set_description('Loss {:.4f} Acc {:.4f}'.format(train_loss / train_steps, train_acc / train_total))
 
-    print('\nTrain Loss {:.4f} Acc {:.4f}'.format(tr_loss / nb_tr_steps, acc / nb_tr_examples))
+    print('\nTrain Loss {:.4f} Acc {:.4f}'.format(train_loss / train_steps, train_acc / train_total))
 
 
 
@@ -145,9 +153,9 @@ for ep in range(N_EPOCHS):
         model.eval()
 
         # Tracking variables
-        ts_loss = 0
-        acc = 0
-        nb_ts_examples, nb_ts_steps = 0, 0
+        test_loss = 0
+        test_acc = 0
+        test_total, test_steps = 0, 0
 
 
         # test the data for one epoch
@@ -161,14 +169,14 @@ for ep in range(N_EPOCHS):
             # Forward pass
             loss, logits = model(b_input_ids, attention_mask=b_input_mask, labels=b_labels)
 
-            acc += logits.argmax(1).eq(b_labels).long().sum().item()
+            test_acc += logits.argmax(1).eq(b_labels).long().sum().item()
 
 
             # Update tracking variables
-            ts_loss += loss.item()
-            nb_ts_examples += b_input_ids.size(0)
-            nb_ts_steps += 1
+            test_loss += loss.item()
+            test_total += b_input_ids.size(0)
+            test_steps += 1
 
-            p_bar.set_description('Loss {:.4f} Acc {:.4f}'.format(ts_loss / nb_ts_steps, acc / nb_ts_examples))
+            p_bar.set_description('Loss {:.4f} Acc {:.4f}'.format(test_loss / test_steps, test_acc / test_total))
 
-        print("\nTest Loss {:.4f} Acc {:.4f}".format(tr_loss / nb_tr_steps, acc / nb_tr_examples))
+        print("\nTest Loss {:.4f} Acc {:.4f}".format(test_loss / test_steps, test_acc / test_total))
