@@ -2,8 +2,9 @@ import torch
 from torch.optim import AdamW
 from torch.utils.data import TensorDataset, DataLoader, RandomSampler, SequentialSampler
 from sklearn.model_selection import train_test_split
-from pytorch_transformers import BertTokenizer, BertForSequenceClassification, BertModel, DistilBertForSequenceClassification
-from tqdm import tqdm, trange
+from transformers import BertTokenizer, BertForSequenceClassification, BertModel, DistilBertForSequenceClassification, AlbertTokenizer, AlbertForSequenceClassification
+import tqdm
+from tqdm import tqdm
 import pandas as pd
 import io
 import numpy as np
@@ -17,10 +18,10 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # NUM_CLASSES = 4
 # BATCH_SIZE=32
 
-DATASET = 'ng20'
-MAX_LEN = 200
-N_EPOCHS = 18
-NUM_CLASSES = 20
+DATASET = 'Dataset/OffenseEval'
+MAX_LEN = 60
+N_EPOCHS = 5
+NUM_CLASSES = 2
 BATCH_SIZE=16
 #
 # DATASET = 'yelp_full'
@@ -30,11 +31,12 @@ BATCH_SIZE=16
 
 #%%
 
-df = pd.read_csv(DATASET + '/train_clean.csv')
+df = pd.read_csv(DATASET + '/train.csv')
+df.dropna(inplace=True)
 
 df.text = df.text.apply(lambda x: "[CLS] " + x + ' [SEP]')
 
-tokenizer = BertTokenizer.from_pretrained('bert-base-uncased', do_lower_case=True)
+tokenizer = AlbertTokenizer.from_pretrained('albert-base-v2', do_lower_case=True)
 
 tokenized_texts = df.text.apply(lambda x: tokenizer.tokenize(' '.join(x.split()[:MAX_LEN])))
 
@@ -50,11 +52,11 @@ train_data_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=Tru
 
 
 #%%
-df = pd.read_csv(DATASET + '/test_clean.csv')
+df = pd.read_csv(DATASET + '/test.csv')
 
 df.text = df.text.apply(lambda x: "[CLS] " + x + ' [SEP]')
 
-tokenizer = BertTokenizer.from_pretrained('bert-base-uncased', do_lower_case=True)
+tokenizer = AlbertTokenizer.from_pretrained('albert-base-v1', do_lower_case=True)
 
 tokenized_texts = df.text.apply(lambda x: tokenizer.tokenize(' '.join(x.split()[:MAX_LEN])))
 
@@ -70,10 +72,8 @@ test_data_loader = DataLoader(test_dataset, batch_size=BATCH_SIZE)
 
 #%%
 
-# model = BertForSequenceClassification.from_pretrained(
-#     "bert-base-uncased", num_labels=NUM_CLASSES)
-model = DistilBertForSequenceClassification.from_pretrained(
-    "distilbert-base-uncased", num_labels=NUM_CLASSES)
+model = AlbertForSequenceClassification.from_pretrained(
+    "albert-base-v1", num_labels=NUM_CLASSES)
 model = model.cuda()
 
 #%%
@@ -93,12 +93,9 @@ optimizer = AdamW(model.parameters(), lr=2e-5)
 #%%
 train_loss_set = []
 
-# Number of training epochs (authors recommend between 2 and 4)
-epochs = 6
-
 # trange is a tqdm wrapper around the normal python range
-for ep in range(epochs):
-    #   print('EPOCH', ep)
+for ep in range(N_EPOCHS):
+    print('EPOCH', ep)
 
     # Training
 
@@ -137,9 +134,9 @@ for ep in range(epochs):
 
         p_bar.set_description('Loss {:.4f} Acc {:.4f}'.format(tr_loss / nb_tr_steps, acc / nb_tr_examples))
 
-    print("Train loss: {}".format(tr_loss / nb_tr_steps))
+    print('\nTrain Loss {:.4f} Acc {:.4f}'.format(tr_loss / nb_tr_steps, acc / nb_tr_examples))
 
-    #   print('EPOCH', ep)
+
 
     # Training
 
@@ -174,4 +171,4 @@ for ep in range(epochs):
 
             p_bar.set_description('Loss {:.4f} Acc {:.4f}'.format(ts_loss / nb_ts_steps, acc / nb_ts_examples))
 
-        print("test loss: {}".format(ts_loss / nb_ts_steps))
+        print("\nTest Loss {:.4f} Acc {:.4f}".format(tr_loss / nb_tr_steps, acc / nb_tr_examples))
