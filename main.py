@@ -22,18 +22,18 @@ import argparse
 
 parser = argparse.ArgumentParser()
 
-# DATASET = 'Dataset/OffenseEval'
-# MAX_LEN = 60
-# N_EPOCHS = 5
-# NUM_CLASSES = 4
-# BATCH_SIZE=32
-#
-
-parser.add_argument('--dataset', default='Emotion')
+parser.add_argument('--dataset', default='OffenseEval')
 parser.add_argument('--max_len', default=60, type=int)
 parser.add_argument('--epochs', default=6, type=int)
-parser.add_argument('--num_classes', default=4, type=int)
+parser.add_argument('--num_classes', default=2, type=int)
 parser.add_argument('--batch_size', default=64, type=int)
+#
+
+# parser.add_argument('--dataset', default='Emotion')
+# parser.add_argument('--max_len', default=60, type=int)
+# parser.add_argument('--epochs', default=6, type=int)
+# parser.add_argument('--num_classes', default=4, type=int)
+# parser.add_argument('--batch_size', default=64, type=int)
 
 # parser.add_argument('--dataset', default='Sarcasm')
 # parser.add_argument('--max_len', default=60, type=int)
