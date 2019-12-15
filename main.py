@@ -1,11 +1,14 @@
+import os
 import random
-
+import datetime, time
+from torch.utils import tensorboard
 import torch
 from sklearn.metrics import confusion_matrix
 from torch import nn
 from torch.optim import AdamW
 from torch.utils.data import TensorDataset, DataLoader, RandomSampler, SequentialSampler
 from sklearn.model_selection import train_test_split
+from torch.utils.tensorboard.summary import hparams
 from transformers import BertTokenizer, BertModel, DistilBertForSequenceClassification, AlbertTokenizer, \
     AlbertForSequenceClassification, AlbertModel
 import tqdm
@@ -16,7 +19,6 @@ import io
 import numpy as np
 import matplotlib.pyplot as plt
 
-
 # %%
 import argparse
 
@@ -24,7 +26,7 @@ parser = argparse.ArgumentParser()
 
 parser.add_argument('--dataset', default='OffenseEval')
 parser.add_argument('--max_len', default=60, type=int)
-parser.add_argument('--epochs', default=6, type=int)
+parser.add_argument('--epochs', default=5, type=int)
 parser.add_argument('--num_classes', default=2, type=int)
 parser.add_argument('--batch_size', default=64, type=int)
 #
@@ -45,6 +47,8 @@ parser.add_argument('--batch_size', default=64, type=int)
 parser.add_argument('--device', default='cuda')
 parser.add_argument('--weight', action='store_false')
 parser.add_argument('--lr', default=2e-5, type=float)
+parser.add_argument('--grad_clip', default=5., type=float)
+parser.add_argument('--seed', default=1, type=int)
 args = parser.parse_known_args()
 print(args)
 
@@ -57,12 +61,22 @@ EPSILON = 10e-13
 LR = args[0].lr
 DATASET = 'Dataset/' + args[0].dataset
 WEIGHT = args[0].weight
+GRAD_CLIP = args[0].grad_clip
 device = torch.device(args[0].device) if torch.cuda.is_available() else torch.device('cpu')
 
-SEED = 1
+SEED = args[0].seed
 torch.manual_seed(SEED)
 np.random.seed(SEED)
 random.seed(SEED)
+
+# %%
+
+time_string = (datetime.datetime.utcnow() + datetime.timedelta(seconds=12600)).replace(
+    microsecond=0).isoformat('_')
+hyper_parameters = {'batch': BATCH_SIZE, 'lr': LR, 'weight': WEIGHT}
+hyper_parameters_string = '--'.join(
+    [k + '=' + str(v) for k, v in vars(args[0]).items() if k in list(hyper_parameters.keys())])
+tb = tensorboard.SummaryWriter(log_dir=f'runs/{args[0].dataset}/{hyper_parameters_string}/{time_string}')
 
 # %%
 
@@ -178,11 +192,9 @@ else:
     else:
         criterion = nn.BCEWithLogitsLoss(reduction='sum')
 
-train_loss_set = []
-metrics_history = []
-dev_metrics_history = []
+metrics_all = []
 
-for i_epoch in range(N_EPOCHS):
+for i_epoch in range(1, N_EPOCHS + 1):
 
     model.train()
 
@@ -190,8 +202,8 @@ for i_epoch in range(N_EPOCHS):
     train_loss = 0
     train_confusion_table = np.zeros((NUM_CLASSES, NUM_CLASSES))
     train_total = 0
+    metrics_train = ()
 
-    # Train the data for one epoch
     p_bar = tqdm(train_data_loader)
     for step, batch in enumerate(p_bar):
         batch = tuple(t.to(device) for t in batch)
@@ -202,15 +214,15 @@ for i_epoch in range(N_EPOCHS):
 
         loss = criterion(logits, batch_y if NUM_CLASSES > 2 else batch_y.float())
         loss.backward()
-        # grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), GRAD_CLIP)
-        # assert grad_norm >= 0, 'encounter nan in gradients.'
+        grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), GRAD_CLIP)
+        assert grad_norm >= 0, 'encounter nan in gradients.'
         optimizer.step()
 
         train_confusion_table += calc_confusion_matrix(batch_y, logits)
         train_total += batch_input.size(0)
         train_loss += loss.item()
 
-        metrics = (
+        metrics_train = (
             train_loss / train_total,
             *calc_metrics(train_confusion_table),
         )
@@ -219,14 +231,17 @@ for i_epoch in range(N_EPOCHS):
 
             '[ EP {0:02d} ]'
             '[ TRN LS: {1:.4f} PR: {2:.4f} F1: {4:.4f} AC: {5:.4f}]'
-                .format(i_epoch, *metrics))
+                .format(i_epoch, *metrics_train))
+
+    for k, v in zip(['train_loss', 'train_precision', 'train_recall', 'train_f1', 'train_accuracy'], metrics_train):
+        tb.add_scalar(k, v * 100, global_step=i_epoch)
 
     with torch.no_grad():
         # Set our model to testing mode (as opposed to evaluation mode)
         model.eval()
 
         # Tracking variables
-        test_loss = 0
+        # test_loss = 0
         test_confusion_table = np.zeros((NUM_CLASSES, NUM_CLASSES))
         test_total = 0
 
@@ -240,14 +255,37 @@ for i_epoch in range(N_EPOCHS):
 
             test_confusion_table += calc_confusion_matrix(batch_y, logits)
             test_total += batch_input.size(0)
-            test_loss += loss.item()
+            # test_loss += loss.item()
 
-            metrics = (
-                test_loss / test_total,
+            metrics_test = (
+                # test_loss / test_total,
                 *calc_metrics(test_confusion_table),
             )
 
             p_bar.set_description(
                 '[ EP {0:02d} ]'
-                '[ TST LS: {1:.4f} PR: {2:.4f} F1: {4:.4f} AC: {5:.4f}]'
-                    .format(i_epoch, *metrics))
+                '[ TST PR: {1:.4f} F1: {3:.4f} AC: {4:.4f}]'
+                    .format(i_epoch, *metrics_test))
+
+    for k, v in zip(['test_precision', 'test_recall', 'test_f1', 'test_accuracy'], metrics_test):
+        tb.add_scalar(k, v * 100, global_step=i_epoch)
+
+    metrics_all.append((*metrics_train, *metrics_test))
+
+metrics = np.array(metrics_all).T
+best_index = metrics[-2].argmax()
+best_metrics = metrics.T[best_index]
+
+
+a = (hyper_parameters,
+               dict(zip(['z_precision', 'z_recall', 'z_f1', 'z_accuracy', 'z_ep'], best_metrics[-4:])))
+
+for j in hparams(*a):
+    tb.file_writer.add_summary(j)
+
+for k, v in a[1].items():
+    tb.add_scalar(k, v)
+
+tb.close()
+
+# %%
